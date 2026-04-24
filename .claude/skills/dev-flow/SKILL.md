@@ -19,10 +19,14 @@ description: Use at the start of every non-trivial task in this repo. Classifies
 | 規模 | 目安 | チェーン |
 |---|---|---|
 | 小 | 1-2ファイル・既存機能の修正・バグ修正 | （準備なし）→ 実装 → `code-review` |
-| 中 | 3-5ファイル・新規コンポーネント1つ・既存モジュールの拡張 | `superpowers:writing-plans` → 実装（必要なら `superpowers:test-driven-development`）→ `code-review` |
-| 大 | 新規パッケージ・新エントリポイント・データフロー追加 | `superpowers:brainstorming` → ADR 起票（`docs/adr/NNNN-*.md`）→ `superpowers:writing-plans` → `superpowers:test-driven-development` → `code-review` |
+| 中 | 3-5ファイル・新規コンポーネント1つ・既存モジュールの拡張 | **設計概要をユーザーに提示して合意** → 実装（必要なら `superpowers:test-driven-development`）→ `code-review` |
+| 大 | 新規パッケージ・新エントリポイント・データフロー追加 | `superpowers:brainstorming`（必要なら）→ ADR 起票（`docs/adr/NNNN-*.md`）→ **設計概要の合意** → `superpowers:test-driven-development` → `code-review` |
 
 迷ったら1段階大きい方を選ぶ。
+
+`superpowers:writing-plans` は**本スキルチェーンからは外している**。1セッション内で in-context に対話しながら進める場合、ADR と会話ログで同等のことが達成でき、plans ファイルは書き捨てになりがちなため。
+subagent に並列ディスパッチする / 長期間セッションを跨ぐ / 第三者に手渡す、のいずれかに該当するときだけ手動で `superpowers:writing-plans` を発動する。
+背景: [docs/learnings/2026-04-24-plans-skip.md](../../../docs/learnings/2026-04-24-plans-skip.md)
 
 ## ルール
 
