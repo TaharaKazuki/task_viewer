@@ -1,13 +1,17 @@
 import { z } from 'zod';
 import type { TodoItem } from './todo.js';
 
+// JSONL-sourced TodoWrite payloads historically carried {id, content, status}.
+// Current Claude Code payloads are {content, activeForm, status} — no id,
+// with a required activeForm. Accept both. `id` is synthesized from array
+// position when absent; unknown fields like activeForm are ignored.
 const todoItemSchema = z
   .object({
-    id: z.string(),
+    id: z.string().optional(),
     content: z.string(),
     status: z.enum(['pending', 'in_progress', 'completed']),
   })
-  .strict();
+  .passthrough();
 
 const toolUseSchema = z
   .object({
@@ -94,7 +98,11 @@ export function extractFromLine(line: string): ExtractedTodoWrite | null {
       // For top-level session JSONLs the agentId equals sessionId.
       // Subagent JSONLs carry a distinct agentId in the same line.
       agentId: meta.data.agentId ?? sessionId,
-      items: input.data.todos,
+      items: input.data.todos.map((t, i) => ({
+        id: t.id ?? `#${i}`,
+        content: t.content,
+        status: t.status,
+      })),
       timestamp: meta.data.timestamp ?? null,
     };
   }

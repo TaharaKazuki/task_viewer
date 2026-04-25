@@ -115,6 +115,37 @@ describe('extractFromLine', () => {
     expect(extractFromLine(line)).toBeNull();
   });
 
+  it('accepts modern TodoWrite payload shape (content/activeForm/status, no id)', () => {
+    // Real Claude Code payloads today omit `id` and carry an `activeForm`
+    // sibling alongside content. We must not reject these and should
+    // synthesize a stable `id` from array position.
+    const line = JSON.stringify({
+      sessionId: 'sid',
+      agentId: 'sid',
+      type: 'assistant',
+      message: {
+        role: 'assistant',
+        content: [
+          {
+            type: 'tool_use',
+            name: 'TodoWrite',
+            input: {
+              todos: [
+                { content: 'first', activeForm: 'firsting', status: 'pending' },
+                { content: 'second', activeForm: 'seconding', status: 'in_progress' },
+              ],
+            },
+          },
+        ],
+      },
+    });
+    const out = extractFromLine(line);
+    expect(out?.items).toEqual([
+      { id: '#0', content: 'first', status: 'pending' },
+      { id: '#1', content: 'second', status: 'in_progress' },
+    ]);
+  });
+
   it('takes the LAST TodoWrite when a single line has multiple', () => {
     const line = JSON.stringify({
       sessionId: 'sid',
