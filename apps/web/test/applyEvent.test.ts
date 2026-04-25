@@ -13,7 +13,16 @@ const snap = (path: string, mtimeMs = 1, content = 'x'): UpsertSnapshot => ({
   path,
   items: [{ id: '1', content, status: 'pending' }],
   mtimeMs,
+  cwd: null,
+  gitBranch: null,
+  project: '(Unknown)',
 });
+
+const enrichDefaults = {
+  cwd: null as string | null,
+  gitBranch: null as string | null,
+  project: '(Unknown)',
+};
 
 describe('applyEvent', () => {
   it('snapshot replaces the files map with the payload', () => {
@@ -38,8 +47,9 @@ describe('applyEvent', () => {
       path: '/p/x',
       items: [{ id: '1', content: 'hi', status: 'in_progress' }],
       mtimeMs: 42,
+      ...enrichDefaults,
     });
-    expect(next.files['/p/x']).toEqual({
+    expect(next.files['/p/x']).toMatchObject({
       meta: meta('aaa'),
       path: '/p/x',
       items: [{ id: '1', content: 'hi', status: 'in_progress' }],
@@ -58,9 +68,28 @@ describe('applyEvent', () => {
       path: '/p/x',
       items: [{ id: '1', content: 'new', status: 'completed' }],
       mtimeMs: 99,
+      ...enrichDefaults,
     });
     expect(next.files['/p/x']?.mtimeMs).toBe(99);
     expect(next.files['/p/x']?.items[0]?.content).toBe('new');
+  });
+
+  it('upsert carries cwd / gitBranch / project into the stored snapshot', () => {
+    const next = applyEvent(INITIAL_STATE, {
+      kind: 'upsert',
+      meta: meta('aaa'),
+      path: '/p/y',
+      items: [],
+      mtimeMs: 5,
+      cwd: '/Users/x/task_viewer',
+      gitBranch: 'main',
+      project: 'task_viewer',
+    });
+    expect(next.files['/p/y']).toMatchObject({
+      cwd: '/Users/x/task_viewer',
+      gitBranch: 'main',
+      project: 'task_viewer',
+    });
   });
 
   it('remove deletes a file by path', () => {
@@ -116,7 +145,7 @@ describe('applyEvent', () => {
     expect(nextSnap.ready).toBe(false);
   });
 
-  it('upsert with the same mtime returns the same state reference (short-circuit)', () => {
+  it('upsert with the same mtime and enrichment returns the same state reference (short-circuit)', () => {
     const start = applyEvent(INITIAL_STATE, {
       kind: 'snapshot',
       files: [snap('/p/a', 42)],
@@ -127,8 +156,28 @@ describe('applyEvent', () => {
       path: '/p/a',
       items: [{ id: '1', content: 'x', status: 'pending' }],
       mtimeMs: 42,
+      ...enrichDefaults,
     });
     expect(next).toBe(start);
+  });
+
+  it('upsert with same mtime but NEW enrichment updates (handles late JSONL discovery)', () => {
+    const start = applyEvent(INITIAL_STATE, {
+      kind: 'snapshot',
+      files: [snap('/p/a', 42)],
+    });
+    const next = applyEvent(start, {
+      kind: 'upsert',
+      meta: meta('aaa'),
+      path: '/p/a',
+      items: [{ id: '1', content: 'x', status: 'pending' }],
+      mtimeMs: 42,
+      cwd: '/Users/x/late',
+      gitBranch: 'main',
+      project: 'late',
+    });
+    expect(next).not.toBe(start);
+    expect(next.files['/p/a']?.project).toBe('late');
   });
 
   it('snapshot clears a stale errorMessage (fresh start after reconnect)', () => {

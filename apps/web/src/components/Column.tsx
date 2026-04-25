@@ -14,10 +14,10 @@ const COLORS: Record<TodoStatus, string> = {
   completed: 'bg-emerald-100 text-emerald-800',
 };
 
-export type ColumnProps = { status: TodoStatus };
+export type ColumnProps = { status: TodoStatus; project: string };
 
-export function Column({ status }: ColumnProps) {
-  const cards = useColumn(status);
+export function Column({ status, project }: ColumnProps) {
+  const cards = useColumn(status, project);
   return (
     <section
       className="flex min-w-0 flex-1 flex-col rounded-lg border border-slate-200 bg-slate-50"

@@ -65,6 +65,9 @@ export class SSEStore {
         path: data.path,
         items: data.items,
         mtimeMs: data.mtimeMs,
+        cwd: data.cwd ?? null,
+        gitBranch: data.gitBranch ?? null,
+        project: data.project ?? '(Unknown)',
       }));
     });
 

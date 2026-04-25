@@ -1,13 +1,16 @@
 import { serve } from '@hono/node-server';
-import { type TodoFileEvent, watchTodos } from '@task-viewer/core';
+import { type TodoFileEvent, watchSessionMeta, watchTodos } from '@task-viewer/core';
 import { createApp } from './app.js';
 import { EventBus } from './bus.js';
+import { type EnrichedTodoFileEvent, enrich } from './enrich.js';
+import { SessionIndex } from './sessionIndex.js';
 import { StateStore } from './state.js';
 
 export type StartServerOptions = {
   port?: number;
   host?: string;
-  dir?: string;
+  dir?: string; // ~/.claude/todos override
+  projectsDir?: string; // ~/.claude/projects override
   corsOrigin?: string | string[];
   heartbeatMs?: number;
 };
@@ -24,22 +27,58 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
   const host = opts.host ?? '127.0.0.1';
 
   const state = new StateStore();
-  const bus = new EventBus<TodoFileEvent>();
-  const watcher = watchTodos(opts.dir ? { dir: opts.dir } : undefined);
+  const bus = new EventBus<EnrichedTodoFileEvent>();
+  const sessionIndex = new SessionIndex();
 
-  // Pump watcher → state + bus. Runs for the life of the server. On failure,
-  // publish a synthetic error event and close the bus so SSE clients
-  // disconnect cleanly (EventSource will then auto-reconnect and get a fresh
-  // snapshot from a new server process if the operator restarted us).
-  const pump = (async () => {
-    for await (const ev of watcher.events) {
-      state.apply(ev);
-      bus.publish(ev);
+  const todoWatcher = watchTodos(opts.dir ? { dir: opts.dir } : undefined);
+  const sessionWatcher = watchSessionMeta(opts.projectsDir ? { dir: opts.projectsDir } : undefined);
+
+  // Pump session metadata → SessionIndex. When a session is discovered AFTER
+  // its todo file was already registered in state, re-emit enriched upserts
+  // for every matching state entry so clients pick up the project label.
+  // Uses the inverted `pathsForSession` index to stay O(k) instead of
+  // scanning the entire state every discovered event.
+  const sessionPump = (async () => {
+    for await (const ev of sessionWatcher.events) {
+      const result = sessionIndex.apply(ev);
+      if (ev.kind !== 'discovered') continue;
+      if (!result.changed) continue;
+      const info = sessionIndex.get(ev.sessionId);
+      if (!info) continue;
+      for (const snap of state.pathsForSession(ev.sessionId)) {
+        if (snap.project === info.project && snap.cwd === info.cwd) continue;
+        const enriched: EnrichedTodoFileEvent = {
+          kind: 'upsert',
+          meta: snap.meta,
+          path: snap.path,
+          items: [...snap.items],
+          mtimeMs: snap.mtimeMs,
+          cwd: info.cwd,
+          gitBranch: info.gitBranch,
+          project: info.project,
+        };
+        state.apply(enriched);
+        bus.publish(enriched);
+      }
     }
   })();
-  pump.catch((err: unknown) => {
+  sessionPump.catch((err: unknown) => {
+    console.error('[task-viewer/server] session pump failed:', toError(err));
+  });
+
+  // Pump todo events with enrichment → state + bus.
+  const todoPump = (async () => {
+    for await (const ev of todoWatcher.events) {
+      const info = ev.kind === 'upsert' ? sessionIndex.get(ev.meta.sessionId) : null;
+      const enriched: EnrichedTodoFileEvent =
+        ev.kind === 'upsert' ? enrich(ev as TodoFileEvent, info) : ev;
+      state.apply(enriched);
+      bus.publish(enriched);
+    }
+  })();
+  todoPump.catch((err: unknown) => {
     const e = toError(err);
-    console.error('[task-viewer/server] watcher pump failed:', e);
+    console.error('[task-viewer/server] todo pump failed:', e);
     try {
       bus.publish({
         kind: 'error',
@@ -66,10 +105,10 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       s.on('error', (err) => reject(err));
     });
   } catch (err) {
-    // Roll back partial setup so the caller doesn't leak a watcher on EADDRINUSE.
+    // Roll back partial setup so the caller doesn't leak watchers on EADDRINUSE.
     bus.closeAll();
-    await watcher.stop();
-    await pump.catch(() => undefined);
+    await Promise.all([todoWatcher.stop(), sessionWatcher.stop()]);
+    await Promise.all([todoPump.catch(() => undefined), sessionPump.catch(() => undefined)]);
     throw err;
   }
 
@@ -80,8 +119,8 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     port,
     async close() {
       bus.closeAll();
-      await watcher.stop();
-      await pump.catch(() => undefined);
+      await Promise.all([todoWatcher.stop(), sessionWatcher.stop()]);
+      await Promise.all([todoPump.catch(() => undefined), sessionPump.catch(() => undefined)]);
       await new Promise<void>((resolve, reject) => {
         httpServer.close((err) => (err ? reject(err) : resolve()));
       });

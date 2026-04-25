@@ -1,4 +1,4 @@
-import type { UpsertSnapshot, WireEvent } from '../types/wire.js';
+import { UNKNOWN_PROJECT, type UpsertSnapshot, type WireEvent } from '../types/wire.js';
 
 export type TodoFiles = Record<string, UpsertSnapshot>;
 
@@ -26,11 +26,23 @@ function markOpen(connection: ConnectionState): ConnectionState {
   return connection === 'closed' ? connection : 'open';
 }
 
+// Defensive defaults for snapshots that pre-date ADR-0004 enrichment.
+function fillEnrichment<T extends Partial<UpsertSnapshot>>(
+  f: T,
+): T & Pick<UpsertSnapshot, 'cwd' | 'gitBranch' | 'project'> {
+  return {
+    ...f,
+    cwd: f.cwd ?? null,
+    gitBranch: f.gitBranch ?? null,
+    project: f.project ?? UNKNOWN_PROJECT,
+  };
+}
+
 export function applyEvent(prev: StoreState, ev: WireEvent): StoreState {
   switch (ev.kind) {
     case 'snapshot': {
       const files: TodoFiles = {};
-      for (const f of ev.files) files[f.path] = f;
+      for (const f of ev.files) files[f.path] = fillEnrichment(f) as UpsertSnapshot;
       // Snapshot is the authoritative "fresh start" signal — also after
       // auto-reconnect — so we clear transient diagnostics here.
       return {
@@ -43,9 +55,15 @@ export function applyEvent(prev: StoreState, ev: WireEvent): StoreState {
     }
     case 'upsert': {
       const existing = prev.files[ev.path];
-      if (existing && existing.mtimeMs === ev.mtimeMs) {
-        // Same revision; short-circuit to avoid re-rendering subscribers on
-        // duplicate-delivery (which is expected per ADR-0002 subscribe-first).
+      if (
+        existing &&
+        existing.mtimeMs === ev.mtimeMs &&
+        existing.cwd === ev.cwd &&
+        existing.gitBranch === ev.gitBranch &&
+        existing.project === ev.project
+      ) {
+        // Same revision AND same enrichment; short-circuit to avoid
+        // re-rendering subscribers on duplicate-delivery.
         return prev;
       }
       return {
@@ -57,6 +75,9 @@ export function applyEvent(prev: StoreState, ev: WireEvent): StoreState {
             path: ev.path,
             items: ev.items,
             mtimeMs: ev.mtimeMs,
+            cwd: ev.cwd,
+            gitBranch: ev.gitBranch,
+            project: ev.project,
           },
         },
         connection: markOpen(prev.connection),

@@ -1,5 +1,6 @@
-import type { TodoFileEvent, TodoItem } from '@task-viewer/core';
+import type { TodoItem } from '@task-viewer/core';
 import { describe, expect, it } from 'vitest';
+import type { EnrichedTodoFileEvent } from '../src/enrich.js';
 import { StateStore } from '../src/state.js';
 
 const meta = (sid: string, aid = sid) => ({
@@ -8,12 +9,20 @@ const meta = (sid: string, aid = sid) => ({
   isSubagent: sid !== aid,
 });
 
-const upsert = (path: string, items: TodoItem[] = [], mtimeMs = 1): TodoFileEvent => ({
+const upsert = (
+  path: string,
+  items: TodoItem[] = [],
+  mtimeMs = 1,
+  overrides: Partial<{ cwd: string | null; gitBranch: string | null; project: string }> = {},
+): EnrichedTodoFileEvent => ({
   kind: 'upsert',
   meta: meta('aaa'),
   path,
   items,
   mtimeMs,
+  cwd: overrides.cwd ?? null,
+  gitBranch: overrides.gitBranch ?? null,
+  project: overrides.project ?? '(Unknown)',
 });
 
 describe('StateStore', () => {
@@ -70,5 +79,28 @@ describe('StateStore', () => {
     const s = new StateStore();
     s.apply({ kind: 'remove', meta: meta('aaa'), path: '/p/none.json' });
     expect(s.size()).toBe(0);
+  });
+
+  it('pathsForSession returns only entries for the matching sessionId', () => {
+    const s = new StateStore();
+    s.apply(upsert('/p/a.json', [], 1, { project: 'alpha' }));
+    s.apply(upsert('/p/b.json', [], 1, { project: 'beta' }));
+    const paths = s.pathsForSession('aaa').map((sn) => sn.path);
+    // Both entries use meta('aaa') so both should be indexed together.
+    expect(paths.sort()).toEqual(['/p/a.json', '/p/b.json']);
+    expect(s.pathsForSession('missing')).toEqual([]);
+  });
+
+  it('carries cwd / gitBranch / project into the snapshot', () => {
+    const s = new StateStore();
+    s.apply(
+      upsert('/p/a.json', [], 1, {
+        cwd: '/Users/x/app',
+        gitBranch: 'main',
+        project: 'app',
+      }),
+    );
+    const [snap] = s.snapshot();
+    expect(snap).toMatchObject({ cwd: '/Users/x/app', gitBranch: 'main', project: 'app' });
   });
 });

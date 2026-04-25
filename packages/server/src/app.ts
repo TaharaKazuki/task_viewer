@@ -1,13 +1,13 @@
-import type { TodoFileEvent } from '@task-viewer/core';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { streamSSE } from 'hono/streaming';
 import type { EventBus } from './bus.js';
+import type { EnrichedTodoFileEvent } from './enrich.js';
 import type { StateStore } from './state.js';
 
 export type CreateAppDeps = {
   state: StateStore;
-  bus: EventBus<TodoFileEvent>;
+  bus: EventBus<EnrichedTodoFileEvent>;
   // CORS allowlist. Default: Vite dev defaults. Using `*` would let any
   // webpage on this machine read the user's todo contents — restrict.
   corsOrigin?: string | string[];
@@ -20,7 +20,7 @@ export type CreateAppDeps = {
 
 type SSEPayload = { event: string; data: string };
 
-function toSSEPayload(ev: TodoFileEvent): SSEPayload {
+function toSSEPayload(ev: EnrichedTodoFileEvent): SSEPayload {
   if (ev.kind === 'upsert') {
     return {
       event: 'upsert',
@@ -29,6 +29,9 @@ function toSSEPayload(ev: TodoFileEvent): SSEPayload {
         path: ev.path,
         items: ev.items,
         mtimeMs: ev.mtimeMs,
+        cwd: ev.cwd,
+        gitBranch: ev.gitBranch,
+        project: ev.project,
       }),
     };
   }

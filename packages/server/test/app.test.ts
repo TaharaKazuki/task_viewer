@@ -1,5 +1,5 @@
-import type { TodoFileEvent } from '@task-viewer/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { EnrichedTodoFileEvent } from '../src/enrich.js';
 import { EventBus, StateStore, createApp } from '../src/index.js';
 
 const UUID_A = '01205cda-ff84-4259-9f77-8e898c0cf748';
@@ -9,6 +9,12 @@ const meta = (sid: string, aid = sid) => ({
   agentId: aid,
   isSubagent: sid !== aid,
 });
+
+const enrichmentDefaults = {
+  cwd: null as string | null,
+  gitBranch: null as string | null,
+  project: '(Unknown)',
+};
 
 type SSEMessage = { event: string; data: string };
 
@@ -57,12 +63,12 @@ function parseSSE(raw: string): SSEMessage {
 
 describe('createApp', () => {
   let state: StateStore;
-  let bus: EventBus<TodoFileEvent>;
+  let bus: EventBus<EnrichedTodoFileEvent>;
   let reader: SSEChunkReader | null = null;
 
   beforeEach(() => {
     state = new StateStore();
-    bus = new EventBus<TodoFileEvent>();
+    bus = new EventBus<EnrichedTodoFileEvent>();
   });
 
   afterEach(async () => {
@@ -85,6 +91,9 @@ describe('createApp', () => {
       path: '/p/a.json',
       items: [{ id: '1', content: 'x', status: 'pending' }],
       mtimeMs: 42,
+      cwd: '/Users/x/task_viewer',
+      gitBranch: 'main',
+      project: 'task_viewer',
     });
     const app = createApp({ state, bus });
     const res = await app.request('/events');
@@ -112,12 +121,18 @@ describe('createApp', () => {
       path: '/p/b.json',
       items: [{ id: '1', content: 'hello', status: 'in_progress' }],
       mtimeMs: 99,
+      cwd: '/Users/x/other',
+      gitBranch: 'feat',
+      project: 'other',
     });
     const up = await reader.next();
     expect(up?.event).toBe('upsert');
     const payload = JSON.parse(up?.data ?? '{}');
     expect(payload.path).toBe('/p/b.json');
     expect(payload.items[0].content).toBe('hello');
+    expect(payload.cwd).toBe('/Users/x/other');
+    expect(payload.gitBranch).toBe('feat');
+    expect(payload.project).toBe('other');
   });
 
   it('forwards remove events with meta and path only', async () => {
@@ -186,6 +201,7 @@ describe('createApp', () => {
       path: '/p/race.json',
       items: [{ id: '1', content: 'race', status: 'in_progress' }],
       mtimeMs: 1,
+      ...enrichmentDefaults,
     });
     const snap = await reader.next();
     expect(snap?.event).toBe('snapshot');

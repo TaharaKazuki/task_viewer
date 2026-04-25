@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { TodoFiles } from '../sse/applyEvent.js';
 import type { TodoItem, TodoStatus, UpsertSnapshot } from '../types/wire.js';
+import { ALL_PROJECTS } from './useProjects.js';
 import { useTodoFiles } from './useTodoFiles.js';
 
 export type ColumnCard = {
@@ -20,11 +21,12 @@ function compareCards(a: ColumnCard, b: ColumnCard): number {
   return a.item.id < b.item.id ? -1 : 1;
 }
 
-function buildColumn(files: TodoFiles, status: TodoStatus): ColumnCard[] {
+function buildColumn(files: TodoFiles, status: TodoStatus, project: string): ColumnCard[] {
   const cards: ColumnCard[] = [];
   for (const path of Object.keys(files)) {
     const file = files[path];
     if (!file) continue;
+    if (project !== ALL_PROJECTS && file.project !== project) continue;
     for (const item of file.items) {
       if (item.status !== status) continue;
       cards.push({ key: `${file.path}::${item.id}`, file, item });
@@ -34,7 +36,7 @@ function buildColumn(files: TodoFiles, status: TodoStatus): ColumnCard[] {
   return cards;
 }
 
-export function useColumn(status: TodoStatus): ColumnCard[] {
+export function useColumn(status: TodoStatus, project: string): ColumnCard[] {
   const files = useTodoFiles();
-  return useMemo(() => buildColumn(files, status), [files, status]);
+  return useMemo(() => buildColumn(files, status, project), [files, status, project]);
 }

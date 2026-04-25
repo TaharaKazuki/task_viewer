@@ -25,8 +25,14 @@ export function TodoCard({ file, item, now }: TodoCardProps) {
   return (
     <article className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm hover:shadow-md transition-shadow">
       <header className="flex items-center justify-between gap-2 text-xs text-slate-500 mb-1">
-        <span className="font-mono" title={file.meta.sessionId}>
-          {shortId(file.meta.sessionId)}
+        <span
+          className="truncate font-medium text-slate-700 max-w-[60%]"
+          title={file.cwd ?? '(unknown)'}
+        >
+          {file.project}
+          {file.gitBranch ? (
+            <span className="ml-1 text-[10px] text-slate-400 font-mono">@{file.gitBranch}</span>
+          ) : null}
         </span>
         {file.meta.isSubagent && (
           <span className="rounded bg-amber-100 text-amber-700 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide">
@@ -38,6 +44,9 @@ export function TodoCard({ file, item, now }: TodoCardProps) {
       <p className="text-sm leading-snug text-slate-900 whitespace-pre-wrap break-words">
         {item.content}
       </p>
+      <footer className="mt-1 text-[10px] font-mono text-slate-400" title={file.meta.sessionId}>
+        {shortId(file.meta.sessionId)}
+      </footer>
     </article>
   );
 }
