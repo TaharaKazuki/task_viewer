@@ -1,8 +1,13 @@
 import { serve } from '@hono/node-server';
-import { type TodoFileEvent, watchSessionMeta, watchTodos } from '@task-viewer/core';
+import {
+  type TodoFileEvent,
+  watchJsonlTodos,
+  watchSessionMeta,
+  watchTodos,
+} from '@task-viewer/core';
 import { createApp } from './app.js';
 import { EventBus } from './bus.js';
-import { type EnrichedTodoFileEvent, enrich } from './enrich.js';
+import { type EnrichedTodoFileEvent, type TodoSource, enrich } from './enrich.js';
 import { SessionIndex } from './sessionIndex.js';
 import { StateStore } from './state.js';
 
@@ -32,12 +37,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
 
   const todoWatcher = watchTodos(opts.dir ? { dir: opts.dir } : undefined);
   const sessionWatcher = watchSessionMeta(opts.projectsDir ? { dir: opts.projectsDir } : undefined);
+  const jsonlTodoWatcher = watchJsonlTodos(
+    opts.projectsDir ? { dir: opts.projectsDir } : undefined,
+  );
 
-  // Pump session metadata → SessionIndex. When a session is discovered AFTER
-  // its todo file was already registered in state, re-emit enriched upserts
-  // for every matching state entry so clients pick up the project label.
-  // Uses the inverted `pathsForSession` index to stay O(k) instead of
-  // scanning the entire state every discovered event.
+  // Pump session metadata → SessionIndex. On late discovery re-emit upserts
+  // for matching state entries (covers todos/-only sessions whose JSONL
+  // arrives after their first upsert).
   const sessionPump = (async () => {
     for await (const ev of sessionWatcher.events) {
       const result = sessionIndex.apply(ev);
@@ -56,6 +62,7 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
           cwd: info.cwd,
           gitBranch: info.gitBranch,
           project: info.project,
+          source: snap.source,
         };
         state.apply(enriched);
         bus.publish(enriched);
@@ -66,30 +73,48 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     console.error('[task-viewer/server] session pump failed:', toError(err));
   });
 
-  // Pump todo events with enrichment → state + bus.
-  const todoPump = (async () => {
-    for await (const ev of todoWatcher.events) {
-      const info = ev.kind === 'upsert' ? sessionIndex.get(ev.meta.sessionId) : null;
-      const enriched: EnrichedTodoFileEvent =
-        ev.kind === 'upsert' ? enrich(ev as TodoFileEvent, info) : ev;
-      state.apply(enriched);
-      bus.publish(enriched);
-    }
-  })();
-  todoPump.catch((err: unknown) => {
-    const e = toError(err);
-    console.error('[task-viewer/server] todo pump failed:', e);
-    try {
-      bus.publish({
-        kind: 'error',
-        path: opts.dir ?? '(default)',
-        reason: 'io',
-        error: e,
-      });
-    } finally {
-      bus.closeAll();
-    }
-  });
+  // A pump that processes a TodoFileEvent stream and tags each event with
+  // the source of origin. Used twice: once for ~/.claude/todos/ events
+  // (source='todos') and once for JSONL-derived events (source='jsonl').
+  const makeTodoPump = (
+    iter: AsyncIterable<TodoFileEvent>,
+    source: TodoSource,
+  ): { promise: Promise<void> } => {
+    const promise = (async () => {
+      for await (const ev of iter) {
+        const info = ev.kind === 'upsert' ? sessionIndex.get(ev.meta.sessionId) : null;
+        const enriched: EnrichedTodoFileEvent =
+          ev.kind === 'upsert' ? enrich(ev, info, source) : ev;
+        state.apply(enriched);
+        bus.publish(enriched);
+      }
+    })();
+    return { promise };
+  };
+
+  const todoPump = makeTodoPump(todoWatcher.events, 'todos');
+  const jsonlPump = makeTodoPump(jsonlTodoWatcher.events, 'jsonl');
+
+  // On either pump's terminal failure: surface as an error event and close
+  // the bus so SSE clients disconnect (their EventSource will reconnect).
+  const installPumpFailureHandler = (p: Promise<void>): void => {
+    p.catch((err: unknown) => {
+      const e = toError(err);
+      console.error('[task-viewer/server] todo pump failed:', e);
+      try {
+        bus.publish({
+          kind: 'error',
+          path: opts.dir ?? '(default)',
+          reason: 'io',
+          error: e,
+        });
+      } finally {
+        bus.closeAll();
+      }
+    });
+  };
+  installPumpFailureHandler(todoPump.promise);
+  installPumpFailureHandler(jsonlPump.promise);
 
   const app = createApp({
     state,
@@ -105,10 +130,13 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
       s.on('error', (err) => reject(err));
     });
   } catch (err) {
-    // Roll back partial setup so the caller doesn't leak watchers on EADDRINUSE.
     bus.closeAll();
-    await Promise.all([todoWatcher.stop(), sessionWatcher.stop()]);
-    await Promise.all([todoPump.catch(() => undefined), sessionPump.catch(() => undefined)]);
+    await Promise.all([todoWatcher.stop(), sessionWatcher.stop(), jsonlTodoWatcher.stop()]);
+    await Promise.all([
+      todoPump.promise.catch(() => undefined),
+      jsonlPump.promise.catch(() => undefined),
+      sessionPump.catch(() => undefined),
+    ]);
     throw err;
   }
 
@@ -119,8 +147,12 @@ export async function startServer(opts: StartServerOptions = {}): Promise<Runnin
     port,
     async close() {
       bus.closeAll();
-      await Promise.all([todoWatcher.stop(), sessionWatcher.stop()]);
-      await Promise.all([todoPump.catch(() => undefined), sessionPump.catch(() => undefined)]);
+      await Promise.all([todoWatcher.stop(), sessionWatcher.stop(), jsonlTodoWatcher.stop()]);
+      await Promise.all([
+        todoPump.promise.catch(() => undefined),
+        jsonlPump.promise.catch(() => undefined),
+        sessionPump.catch(() => undefined),
+      ]);
       await new Promise<void>((resolve, reject) => {
         httpServer.close((err) => (err ? reject(err) : resolve()));
       });

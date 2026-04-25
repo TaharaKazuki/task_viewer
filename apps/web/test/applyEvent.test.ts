@@ -16,12 +16,14 @@ const snap = (path: string, mtimeMs = 1, content = 'x'): UpsertSnapshot => ({
   cwd: null,
   gitBranch: null,
   project: '(Unknown)',
+  source: 'todos',
 });
 
 const enrichDefaults = {
   cwd: null as string | null,
   gitBranch: null as string | null,
   project: '(Unknown)',
+  source: 'todos' as const,
 };
 
 describe('applyEvent', () => {
@@ -74,7 +76,7 @@ describe('applyEvent', () => {
     expect(next.files['/p/x']?.items[0]?.content).toBe('new');
   });
 
-  it('upsert carries cwd / gitBranch / project into the stored snapshot', () => {
+  it('upsert carries cwd / gitBranch / project / source into the stored snapshot', () => {
     const next = applyEvent(INITIAL_STATE, {
       kind: 'upsert',
       meta: meta('aaa'),
@@ -84,12 +86,32 @@ describe('applyEvent', () => {
       cwd: '/Users/x/task_viewer',
       gitBranch: 'main',
       project: 'task_viewer',
+      source: 'jsonl',
     });
     expect(next.files['/p/y']).toMatchObject({
       cwd: '/Users/x/task_viewer',
       gitBranch: 'main',
       project: 'task_viewer',
+      source: 'jsonl',
     });
+  });
+
+  it('upsert with source change (todos -> jsonl) updates even at same mtime', () => {
+    const start = applyEvent(INITIAL_STATE, {
+      kind: 'snapshot',
+      files: [snap('/p/a', 42)],
+    });
+    const next = applyEvent(start, {
+      kind: 'upsert',
+      meta: meta('aaa'),
+      path: '/p/a',
+      items: [{ id: '1', content: 'x', status: 'pending' }],
+      mtimeMs: 42,
+      ...enrichDefaults,
+      source: 'jsonl',
+    });
+    expect(next).not.toBe(start);
+    expect(next.files['/p/a']?.source).toBe('jsonl');
   });
 
   it('remove deletes a file by path', () => {
@@ -175,6 +197,7 @@ describe('applyEvent', () => {
       cwd: '/Users/x/late',
       gitBranch: 'main',
       project: 'late',
+      source: 'todos',
     });
     expect(next).not.toBe(start);
     expect(next.files['/p/a']?.project).toBe('late');

@@ -16,3 +16,14 @@ export type {
   SessionWatcherOptions,
 } from './sessionWatcher.js';
 export { watchSessionMeta } from './sessionWatcher.js';
+export type { ExtractedTodoWrite } from './jsonlTodoExtractor.js';
+export {
+  extractFromLine,
+  extractLatestTodoWrite,
+  todoWriteSignature,
+} from './jsonlTodoExtractor.js';
+export type {
+  JsonlTodoWatcher,
+  JsonlTodoWatcherOptions,
+} from './jsonlTodoWatcher.js';
+export { watchJsonlTodos } from './jsonlTodoWatcher.js';

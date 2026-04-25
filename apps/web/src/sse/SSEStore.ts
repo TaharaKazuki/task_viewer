@@ -68,6 +68,7 @@ export class SSEStore {
         cwd: data.cwd ?? null,
         gitBranch: data.gitBranch ?? null,
         project: data.project ?? '(Unknown)',
+        source: data.source === 'jsonl' ? 'jsonl' : 'todos',
       }));
     });
 

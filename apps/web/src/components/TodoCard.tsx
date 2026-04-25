@@ -15,6 +15,17 @@ function relativeTime(mtimeMs: number, now = Date.now()): string {
   return `${deltaDay}d ago`;
 }
 
+const SOURCE_BADGE: Record<UpsertSnapshot['source'], { label: string; className: string }> = {
+  todos: {
+    label: 'todos',
+    className: 'bg-slate-100 text-slate-600',
+  },
+  jsonl: {
+    label: 'jsonl',
+    className: 'bg-violet-100 text-violet-700',
+  },
+};
+
 export type TodoCardProps = {
   file: UpsertSnapshot;
   item: TodoItem;
@@ -22,11 +33,12 @@ export type TodoCardProps = {
 };
 
 export function TodoCard({ file, item, now }: TodoCardProps) {
+  const sourceBadge = SOURCE_BADGE[file.source];
   return (
     <article className="rounded-md border border-slate-200 bg-white px-3 py-2 shadow-sm hover:shadow-md transition-shadow">
       <header className="flex items-center justify-between gap-2 text-xs text-slate-500 mb-1">
         <span
-          className="truncate font-medium text-slate-700 max-w-[60%]"
+          className="truncate font-medium text-slate-700 max-w-[55%]"
           title={file.cwd ?? '(unknown)'}
         >
           {file.project}
@@ -39,6 +51,12 @@ export function TodoCard({ file, item, now }: TodoCardProps) {
             sub
           </span>
         )}
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] font-mono ${sourceBadge.className}`}
+          title={file.source === 'jsonl' ? 'derived from JSONL' : 'from ~/.claude/todos'}
+        >
+          {sourceBadge.label}
+        </span>
         <span className="ml-auto tabular-nums">{relativeTime(file.mtimeMs, now)}</span>
       </header>
       <p className="text-sm leading-snug text-slate-900 whitespace-pre-wrap break-words">

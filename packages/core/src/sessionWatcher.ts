@@ -99,7 +99,17 @@ export function watchSessionMeta(opts: SessionWatcherOptions = {}): SessionWatch
     // Ignore the root directory itself; only accept files inside a
     // project subdirectory (conventional layout).
     const parent = path.dirname(filePath);
-    return parent !== dir;
+    if (parent === dir) return false;
+    // Reject subagent jsonls. They live at
+    //   {projectDir}/{parentSessionId}/subagents/agent-{aid}.jsonl
+    // and contain `sessionId: parent` with the SUBAGENT's transient cwd
+    // (which often differs because subagents run via Bash with `cd`).
+    // Letting them feed SessionIndex would clobber the parent session's
+    // project label with whatever directory the subagent happened to be
+    // in. jsonlTodoWatcher handles subagent jsonls separately for
+    // TodoWrite extraction.
+    if (filePath.includes(`${path.sep}subagents${path.sep}`)) return false;
+    return true;
   };
 
   const processInitialAdd = (filePath: string): void => {

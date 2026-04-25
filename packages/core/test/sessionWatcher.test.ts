@@ -154,6 +154,33 @@ describe('watchSessionMeta', () => {
     watcher = null;
   });
 
+  it('ignores subagent JSONLs (which carry transient cwd that would clobber parent session)', async () => {
+    // Set up a top-level parent jsonl with task_viewer cwd.
+    const projectDir = path.join(dir, '-Users-x-task-viewer');
+    mkdirSync(projectDir);
+    writeFileSync(
+      path.join(projectDir, 'parent-sid.jsonl'),
+      jsonl([{ sessionId: 'parent-sid', cwd: '/Users/x/task_viewer', gitBranch: 'main' }]),
+    );
+    // Add a subagent jsonl with the same parent sessionId but a
+    // different (subagent-local) cwd that should be ignored.
+    const subDir = path.join(projectDir, 'parent-sid', 'subagents');
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(
+      path.join(subDir, 'agent-aaa.jsonl'),
+      jsonl([
+        { sessionId: 'parent-sid', cwd: '/Users/x/task_viewer/packages/core', gitBranch: 'main' },
+      ]),
+    );
+    watcher = watchSessionMeta({ dir });
+    const events = await collectWithinMs(watcher, 500);
+    const discoveries = events.filter((e) => e.kind === 'discovered');
+    expect(discoveries).toHaveLength(1);
+    if (discoveries[0]?.kind === 'discovered') {
+      expect(discoveries[0].cwd).toBe('/Users/x/task_viewer');
+    }
+  });
+
   it('is idempotent on repeated stop()', async () => {
     watcher = watchSessionMeta({ dir });
     await collect(watcher, 1);

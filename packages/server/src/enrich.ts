@@ -3,6 +3,10 @@ import type { SessionInfo } from './sessionIndex.js';
 
 export const UNKNOWN_PROJECT = '(Unknown)';
 
+// Identifies which underlying watcher produced the event so the UI can
+// render a small badge on each card. ADR-0005.
+export type TodoSource = 'todos' | 'jsonl';
+
 export type UpsertEnriched = {
   kind: 'upsert';
   meta: TodoFileMeta;
@@ -12,30 +16,31 @@ export type UpsertEnriched = {
   cwd: string | null;
   gitBranch: string | null;
   project: string;
+  source: TodoSource;
 };
 
-// Server-side enriched event union. Upsert carries session metadata
-// resolved via SessionIndex. Other event kinds pass through unchanged.
 export type EnrichedTodoFileEvent =
   | { kind: 'ready' }
   | UpsertEnriched
   | Extract<TodoFileEvent, { kind: 'remove' }>
   | Extract<TodoFileEvent, { kind: 'error' }>;
 
-export function enrich(ev: TodoFileEvent, info: SessionInfo | null): EnrichedTodoFileEvent {
+export function enrich(
+  ev: TodoFileEvent,
+  info: SessionInfo | null,
+  source: TodoSource,
+): EnrichedTodoFileEvent {
   if (ev.kind !== 'upsert') return ev;
   return {
     kind: 'upsert',
     meta: ev.meta,
     path: ev.path,
-    // Copy-on-write: break the alias back to core's parsed array so any
-    // later mutation of the stored snapshot (unlikely but possible in
-    // future refactors) does not bleed into other consumers holding the
-    // original event reference.
+    // Copy-on-write: break the alias back to core's parsed array.
     items: [...ev.items],
     mtimeMs: ev.mtimeMs,
     cwd: info?.cwd ?? null,
     gitBranch: info?.gitBranch ?? null,
     project: info?.project ?? UNKNOWN_PROJECT,
+    source,
   };
 }

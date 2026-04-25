@@ -14,6 +14,7 @@ const enrichmentDefaults = {
   cwd: null as string | null,
   gitBranch: null as string | null,
   project: '(Unknown)',
+  source: 'todos' as const,
 };
 
 type SSEMessage = { event: string; data: string };
@@ -94,6 +95,7 @@ describe('createApp', () => {
       cwd: '/Users/x/task_viewer',
       gitBranch: 'main',
       project: 'task_viewer',
+      source: 'todos',
     });
     const app = createApp({ state, bus });
     const res = await app.request('/events');
@@ -124,6 +126,7 @@ describe('createApp', () => {
       cwd: '/Users/x/other',
       gitBranch: 'feat',
       project: 'other',
+      source: 'jsonl',
     });
     const up = await reader.next();
     expect(up?.event).toBe('upsert');
@@ -133,6 +136,7 @@ describe('createApp', () => {
     expect(payload.cwd).toBe('/Users/x/other');
     expect(payload.gitBranch).toBe('feat');
     expect(payload.project).toBe('other');
+    expect(payload.source).toBe('jsonl');
   });
 
   it('forwards remove events with meta and path only', async () => {

@@ -32,6 +32,7 @@ function toSSEPayload(ev: EnrichedTodoFileEvent): SSEPayload {
         cwd: ev.cwd,
         gitBranch: ev.gitBranch,
         project: ev.project,
+        source: ev.source,
       }),
     };
   }

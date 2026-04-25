@@ -13,7 +13,12 @@ const upsert = (
   path: string,
   items: TodoItem[] = [],
   mtimeMs = 1,
-  overrides: Partial<{ cwd: string | null; gitBranch: string | null; project: string }> = {},
+  overrides: Partial<{
+    cwd: string | null;
+    gitBranch: string | null;
+    project: string;
+    source: 'todos' | 'jsonl';
+  }> = {},
 ): EnrichedTodoFileEvent => ({
   kind: 'upsert',
   meta: meta('aaa'),
@@ -23,6 +28,7 @@ const upsert = (
   cwd: overrides.cwd ?? null,
   gitBranch: overrides.gitBranch ?? null,
   project: overrides.project ?? '(Unknown)',
+  source: overrides.source ?? 'todos',
 });
 
 describe('StateStore', () => {

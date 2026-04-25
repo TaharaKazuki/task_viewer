@@ -17,9 +17,9 @@ export type TodoFileMeta = {
   isSubagent: boolean;
 };
 
-// Phase 2: cwd / gitBranch / project are emitted by the server after
-// joining todo events with JSONL session metadata (ADR-0004). project is
-// always populated — "(Unknown)" when the JSONL isn't discovered yet.
+// ADR-0005: which underlying watcher emitted this card.
+export type TodoSource = 'todos' | 'jsonl';
+
 export type UpsertSnapshot = {
   meta: TodoFileMeta;
   path: string;
@@ -28,6 +28,7 @@ export type UpsertSnapshot = {
   cwd: string | null;
   gitBranch: string | null;
   project: string;
+  source: TodoSource;
 };
 
 export const UNKNOWN_PROJECT = '(Unknown)';
@@ -43,6 +44,7 @@ export type WireEvent =
       cwd: string | null;
       gitBranch: string | null;
       project: string;
+      source: TodoSource;
     }
   | { kind: 'remove'; meta: TodoFileMeta; path: string }
   | { kind: 'error'; path: string; reason: string; message: string }
